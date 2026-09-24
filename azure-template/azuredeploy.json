@@ -1,0 +1,96 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Creates the Azure-side trust for Grafana's secretless Azure Monitor connection: a managed identity, a federated credential trusting Grafana's OIDC issuer, and a Monitoring Reader role assignment scoped to this resource group. No client secret is created. Deploys entirely with your own Azure Portal session — Grafana never sees this deployment or holds any access to run it. Prototype limitation: Monitoring Reader is scoped to this resource group, not the whole subscription (cross-scope role assignments from a resource-group-scoped template need a nested subscription-level deployment, not yet built here) — widen the role assignment's scope by hand afterward if you need Grafana to see resources in other resource groups too."
+  },
+  "parameters": {
+    "managedIdentityName": {
+      "type": "string",
+      "defaultValue": "mi-grafana-poc",
+      "metadata": {
+        "description": "Name for the managed identity Grafana will authenticate as."
+      }
+    },
+    "issuer": {
+      "type": "string",
+      "defaultValue": "https://jcolladokuri.github.io/azure-secretless-poc",
+      "metadata": {
+        "description": "Grafana's OIDC issuer URL. Do not change this — it must match exactly what Grafana's token service signs with."
+      }
+    },
+    "subject": {
+      "type": "string",
+      "defaultValue": "stack:acme-prod:conn:azure-real",
+      "metadata": {
+        "description": "The fixed identifier for your Grafana connection. Do not change this — Grafana derives it server-side and a mismatch here means auth will fail with AADSTS700213."
+      }
+    },
+    "audience": {
+      "type": "string",
+      "defaultValue": "api://AzureADTokenExchange",
+      "metadata": {
+        "description": "Fixed audience Azure AD expects for workload identity federation. Do not change."
+      }
+    }
+  },
+  "variables": {
+    "federatedCredentialName": "grafana-poc",
+    "monitoringReaderRoleId": "43d0d8ad-25c7-4714-9337-8ba259a9fe05",
+    "roleAssignmentName": "[guid(resourceGroup().id, parameters('managedIdentityName'), variables('monitoringReaderRoleId'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "[parameters('managedIdentityName')]",
+      "location": "[resourceGroup().location]"
+    },
+    {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials",
+      "apiVersion": "2023-01-31",
+      "name": "[format('{0}/{1}', parameters('managedIdentityName'), variables('federatedCredentialName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]"
+      ],
+      "properties": {
+        "issuer": "[parameters('issuer')]",
+        "subject": "[parameters('subject')]",
+        "audiences": [
+          "[parameters('audience')]"
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[variables('roleAssignmentName')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('monitoringReaderRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), '2023-01-31', 'Full').properties.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    }
+  ],
+  "outputs": {
+    "clientId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), '2023-01-31', 'Full').properties.clientId]"
+    },
+    "tenantId": {
+      "type": "string",
+      "value": "[subscription().tenantId]"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "value": "[subscription().subscriptionId]"
+    },
+    "instructions": {
+      "type": "string",
+      "value": "Copy clientId, tenantId, and subscriptionId above into Grafana's Azure Monitor (secretless) datasource, or paste them where the Connect flow asked for them."
+    }
+  }
+}
