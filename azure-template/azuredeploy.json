@@ -2,7 +2,7 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "metadata": {
-    "description": "Creates the Azure-side trust for Grafana's secretless Azure Monitor connection: a managed identity, a federated credential trusting Grafana's OIDC issuer, and a Monitoring Reader role assignment scoped to this resource group. No client secret is created. Deploys entirely with your own Azure Portal session — Grafana never sees this deployment or holds any access to run it. Prototype limitation: Monitoring Reader is scoped to this resource group, not the whole subscription (cross-scope role assignments from a resource-group-scoped template need a nested subscription-level deployment, not yet built here) — widen the role assignment's scope by hand afterward if you need Grafana to see resources in other resource groups too."
+    "description": "Creates the Azure-side trust for Grafana's secretless Azure Monitor connection: a managed identity, a federated credential trusting Grafana's OIDC issuer, and a Monitoring Reader role assignment scoped to the whole subscription. No client secret is created. Deploys entirely with your own Azure Portal session — Grafana never sees this deployment or holds any access to run it. Requires the deploying principal to have role-assignment write permission at the subscription level (e.g. Owner or User Access Administrator), since the role assignment is created at subscription scope rather than resource-group scope."
   },
   "parameters": {
     "managedIdentityName": {
@@ -36,8 +36,7 @@
   },
   "variables": {
     "federatedCredentialName": "grafana-poc",
-    "monitoringReaderRoleId": "43d0d8ad-25c7-4714-9337-8ba259a9fe05",
-    "roleAssignmentName": "[guid(resourceGroup().id, parameters('managedIdentityName'), variables('monitoringReaderRoleId'))]"
+    "monitoringReaderRoleId": "43d0d8ad-25c7-4714-9337-8ba259a9fe05"
   },
   "resources": [
     {
@@ -62,16 +61,51 @@
       }
     },
     {
-      "type": "Microsoft.Authorization/roleAssignments",
-      "apiVersion": "2022-04-01",
-      "name": "[variables('roleAssignmentName')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "monitoringReaderSubscriptionRoleAssignment",
+      "subscriptionId": "[subscription().subscriptionId]",
+      "location": "[resourceGroup().location]",
       "dependsOn": [
         "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]"
       ],
       "properties": {
-        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('monitoringReaderRoleId'))]",
-        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), '2023-01-31', 'Full').properties.principalId]",
-        "principalType": "ServicePrincipal"
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-08-01/subscriptionDeploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "principalId": {
+              "type": "string"
+            },
+            "monitoringReaderRoleId": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(subscription().id, parameters('principalId'), parameters('monitoringReaderRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('monitoringReaderRoleId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "ServicePrincipal"
+              }
+            }
+          ]
+        },
+        "parameters": {
+          "principalId": {
+            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), '2023-01-31', 'Full').properties.principalId]"
+          },
+          "monitoringReaderRoleId": {
+            "value": "[variables('monitoringReaderRoleId')]"
+          }
+        }
       }
     }
   ],
