@@ -1,0 +1,101 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Grants an existing Grafana workload identity (created by azuredeploy.json in the Authorization step) the AllDatabasesViewer role on one or more Azure Data Explorer (Kusto) clusters. Azure RBAC alone — even Owner — never grants Kusto query access; Kusto has its own separate permission model, normally granted by running a '.add database <db> viewers (...)' KQL command directly against the cluster. This template performs the same grant through ARM instead, so the person deploying it doesn't need direct Kusto access or KQL familiarity. Requires write access on each listed cluster (e.g. Contributor). Assumes the identity already exists — this template does not create one."
+  },
+  "parameters": {
+    "clientId": {
+      "type": "string",
+      "metadata": {
+        "description": "Client (application) ID of the existing Grafana workload identity — from the Authorization step's Deploy to Azure outputs."
+      }
+    },
+    "tenantId": {
+      "type": "string",
+      "metadata": {
+        "description": "Tenant ID of the existing Grafana workload identity — from the Authorization step's Deploy to Azure outputs."
+      }
+    },
+    "kustoClusterIds": {
+      "type": "array",
+      "minLength": 1,
+      "metadata": {
+        "description": "Full resource IDs of the Azure Data Explorer clusters to grant access to, e.g. /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Kusto/clusters/<name>. Grafana's onboarding app already found these via an Azure Resource Graph query — copy them from there."
+      }
+    }
+  },
+  "variables": {
+    "assignmentName": "grafana-poc-viewer"
+  },
+  "resources": [
+    {
+      "copy": {
+        "name": "kustoViewerCopy",
+        "count": "[length(parameters('kustoClusterIds'))]"
+      },
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "[format('kustoViewer-{0}', copyIndex())]",
+      "subscriptionId": "[split(parameters('kustoClusterIds')[copyIndex()], '/')[2]]",
+      "resourceGroup": "[split(parameters('kustoClusterIds')[copyIndex()], '/')[4]]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "clusterName": {
+              "type": "string"
+            },
+            "clientId": {
+              "type": "string"
+            },
+            "tenantId": {
+              "type": "string"
+            },
+            "assignmentName": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Kusto/clusters/principalAssignments",
+              "apiVersion": "2023-05-02",
+              "name": "[format('{0}/{1}', parameters('clusterName'), parameters('assignmentName'))]",
+              "properties": {
+                "principalId": "[parameters('clientId')]",
+                "principalType": "App",
+                "role": "AllDatabasesViewer",
+                "tenantId": "[parameters('tenantId')]"
+              }
+            }
+          ]
+        },
+        "parameters": {
+          "clusterName": {
+            "value": "[last(split(parameters('kustoClusterIds')[copyIndex()], '/'))]"
+          },
+          "clientId": {
+            "value": "[parameters('clientId')]"
+          },
+          "tenantId": {
+            "value": "[parameters('tenantId')]"
+          },
+          "assignmentName": {
+            "value": "[variables('assignmentName')]"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "instructions": {
+      "type": "string",
+      "value": "Retry the health check on the Azure Data Explorer data source in Grafana — the identity can now query the clusters listed above."
+    }
+  }
+}
