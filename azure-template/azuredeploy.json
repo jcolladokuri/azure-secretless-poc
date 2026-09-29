@@ -2,7 +2,7 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "metadata": {
-    "description": "Creates the Azure-side trust for Grafana's secretless Azure Monitor connection: a managed identity, a federated credential trusting Grafana's OIDC issuer, and a Monitoring Reader role assignment scoped to the whole subscription. No client secret is created. Deploys entirely with your own Azure Portal session — Grafana never sees this deployment or holds any access to run it. Requires the deploying principal to have role-assignment write permission at the subscription level (e.g. Owner or User Access Administrator), since the role assignment is created at subscription scope rather than resource-group scope."
+    "description": "Creates the Azure-side trust for Grafana's secretless Azure Monitor connection: a managed identity, a federated credential trusting Grafana's OIDC issuer, and a Monitoring Reader role assignment scoped to the whole subscription. No client secret is created. Deploys entirely with your own Azure Portal session — Grafana never sees this deployment or holds any access to run it. Requires the deploying principal to have role-assignment write permission at the subscription level (e.g. Owner or User Access Administrator), since the role assignment is created at subscription scope rather than resource-group scope. Optionally, if kustoClusterIds is provided, also grants this identity the AllDatabasesViewer role on each listed Azure Data Explorer cluster — Azure RBAC alone never grants Kusto query access, so this step is otherwise a separate manual .add database ... viewers KQL command. Requires write access on each listed cluster."
   },
   "parameters": {
     "managedIdentityName": {
@@ -32,11 +32,19 @@
       "metadata": {
         "description": "Fixed audience Azure AD expects for workload identity federation. Do not change."
       }
+    },
+    "kustoClusterIds": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Optional. Full resource IDs of Azure Data Explorer (Kusto) clusters to also grant this identity read access to, e.g. /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Kusto/clusters/<name>. Azure RBAC (even Owner) doesn't grant Kusto query access on its own — this is Kusto's own separate permission model, granted here as the 'AllDatabasesViewer' cluster role. Leave empty to skip; each cluster can be in any subscription or resource group you have access to."
+      }
     }
   },
   "variables": {
     "federatedCredentialName": "grafana-poc",
-    "monitoringReaderRoleId": "43d0d8ad-25c7-4714-9337-8ba259a9fe05"
+    "monitoringReaderRoleId": "43d0d8ad-25c7-4714-9337-8ba259a9fe05",
+    "kustoViewerAssignmentName": "grafana-poc-viewer"
   },
   "resources": [
     {
@@ -107,6 +115,72 @@
           }
         }
       }
+    },
+    {
+      "condition": "[greater(length(parameters('kustoClusterIds')), 0)]",
+      "copy": {
+        "name": "kustoViewerCopy",
+        "count": "[length(parameters('kustoClusterIds'))]"
+      },
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "[format('kustoViewer-{0}', copyIndex())]",
+      "subscriptionId": "[split(parameters('kustoClusterIds')[copyIndex()], '/')[2]]",
+      "resourceGroup": "[split(parameters('kustoClusterIds')[copyIndex()], '/')[4]]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]"
+      ],
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "clusterName": {
+              "type": "string"
+            },
+            "clientId": {
+              "type": "string"
+            },
+            "tenantId": {
+              "type": "string"
+            },
+            "assignmentName": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Kusto/clusters/principalAssignments",
+              "apiVersion": "2023-05-02",
+              "name": "[format('{0}/{1}', parameters('clusterName'), parameters('assignmentName'))]",
+              "properties": {
+                "principalId": "[parameters('clientId')]",
+                "principalType": "App",
+                "role": "AllDatabasesViewer",
+                "tenantId": "[parameters('tenantId')]"
+              }
+            }
+          ]
+        },
+        "parameters": {
+          "clusterName": {
+            "value": "[last(split(parameters('kustoClusterIds')[copyIndex()], '/'))]"
+          },
+          "clientId": {
+            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), '2023-01-31', 'Full').properties.clientId]"
+          },
+          "tenantId": {
+            "value": "[subscription().tenantId]"
+          },
+          "assignmentName": {
+            "value": "[variables('kustoViewerAssignmentName')]"
+          }
+        }
+      }
     }
   ],
   "outputs": {
@@ -124,7 +198,7 @@
     },
     "instructions": {
       "type": "string",
-      "value": "Copy clientId, tenantId, and subscriptionId above into Grafana's Azure Monitor (secretless) datasource, or paste them where the Connect flow asked for them."
+      "value": "Copy clientId, tenantId, and subscriptionId above into Grafana's Azure Monitor (secretless) datasource, or paste them where the Connect flow asked for them. If you listed kustoClusterIds, this identity can now query those clusters too."
     }
   }
 }
