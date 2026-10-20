@@ -1,0 +1,423 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "DRAFT. Subscription-level variant of azuredeploy.json. Creates a resource group, a managed identity with a federated credential trusting Grafana's OIDC issuer, and Monitoring Reader role assignments at every scope listed in monitoringReaderScopes (subscriptions, resource groups, or individual resources, in any subscription the deployer can write role assignments in). Optionally grants AllDatabasesViewer on listed Azure Data Explorer clusters. No client secret is created."
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[deployment().location]",
+      "metadata": {
+        "description": "Region for the resource group and managed identity."
+      }
+    },
+    "resourceGroupName": {
+      "type": "string",
+      "defaultValue": "rg-grafana-azure",
+      "metadata": {
+        "description": "Resource group that holds the managed identity. Created if it does not exist."
+      }
+    },
+    "managedIdentityName": {
+      "type": "string",
+      "defaultValue": "mi-grafana-poc",
+      "metadata": {
+        "description": "Name for the managed identity Grafana will authenticate as."
+      }
+    },
+    "issuer": {
+      "type": "string",
+      "defaultValue": "https://jcolladokuri.github.io/azure-secretless-poc",
+      "metadata": {
+        "description": "Grafana's OIDC issuer URL. Do not change this — it must match exactly what Grafana's token service signs with."
+      }
+    },
+    "subject": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Copy the subject value provided by the Grafana App for your connection and paste it here exactly as shown. A mismatch means auth will fail with AADSTS700213."
+      }
+    },
+    "audience": {
+      "type": "string",
+      "defaultValue": "api://AzureADTokenExchange",
+      "metadata": {
+        "description": "Fixed audience Azure AD expects for workload identity federation. Do not change."
+      }
+    },
+    "monitoringReaderScopes": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Full Azure resource IDs to grant Monitoring Reader on. Each entry can be a subscription (/subscriptions/<id>), a resource group (/subscriptions/<id>/resourceGroups/<rg>), or a single resource (/subscriptions/<id>/resourceGroups/<rg>/providers/<type>/<name>). The deployer needs role-assignment write permission on each."
+      }
+    },
+    "kustoClusterIds": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Optional. Full resource IDs of Azure Data Explorer (Kusto) clusters to also grant this identity read access to, e.g. /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Kusto/clusters/<name>. Azure RBAC alone doesn't grant Kusto query access — this grants Kusto's separate 'AllDatabasesViewer' cluster role. Leave empty to skip."
+      }
+    }
+  },
+  "variables": {
+    "federatedCredentialName": "grafana-poc",
+    "monitoringReaderRoleId": "43d0d8ad-25c7-4714-9337-8ba259a9fe05",
+    "kustoViewerAssignmentName": "grafana-poc-viewer",
+    "identityDeploymentName": "grafana-identity"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2022-09-01",
+      "name": "[parameters('resourceGroupName')]",
+      "location": "[parameters('location')]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "[variables('identityDeploymentName')]",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]"
+      ],
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "managedIdentityName": {
+              "type": "string"
+            },
+            "federatedCredentialName": {
+              "type": "string"
+            },
+            "issuer": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "audience": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-01-31",
+              "name": "[parameters('managedIdentityName')]",
+              "location": "[parameters('location')]"
+            },
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials",
+              "apiVersion": "2023-01-31",
+              "name": "[format('{0}/{1}', parameters('managedIdentityName'), parameters('federatedCredentialName'))]",
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]"
+              ],
+              "properties": {
+                "issuer": "[parameters('issuer')]",
+                "subject": "[parameters('subject')]",
+                "audiences": [
+                  "[parameters('audience')]"
+                ]
+              }
+            }
+          ],
+          "outputs": {
+            "principalId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), '2023-01-31').principalId]"
+            },
+            "clientId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), '2023-01-31').clientId]"
+            }
+          }
+        },
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "managedIdentityName": {
+            "value": "[parameters('managedIdentityName')]"
+          },
+          "federatedCredentialName": {
+            "value": "[variables('federatedCredentialName')]"
+          },
+          "issuer": {
+            "value": "[parameters('issuer')]"
+          },
+          "subject": {
+            "value": "[parameters('subject')]"
+          },
+          "audience": {
+            "value": "[parameters('audience')]"
+          }
+        }
+      }
+    },
+    {
+      "comment": "Subscription-scope assignments: scope IDs with 3 segments, e.g. /subscriptions/<id>.",
+      "condition": "[equals(length(split(parameters('monitoringReaderScopes')[copyIndex()], '/')), 3)]",
+      "copy": {
+        "name": "subscriptionScopeCopy",
+        "count": "[length(parameters('monitoringReaderScopes'))]"
+      },
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "[format('mr-sub-{0}', copyIndex())]",
+      "location": "[parameters('location')]",
+      "subscriptionId": "[split(parameters('monitoringReaderScopes')[copyIndex()], '/')[2]]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', variables('identityDeploymentName'))]"
+      ],
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "principalId": {
+              "type": "string"
+            },
+            "roleId": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(subscription().id, parameters('principalId'), parameters('roleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "ServicePrincipal"
+              }
+            }
+          ]
+        },
+        "parameters": {
+          "principalId": {
+            "value": "[reference(variables('identityDeploymentName')).outputs.principalId.value]"
+          },
+          "roleId": {
+            "value": "[variables('monitoringReaderRoleId')]"
+          }
+        }
+      }
+    },
+    {
+      "comment": "Resource-group-scope assignments: scope IDs with 5 segments, e.g. /subscriptions/<id>/resourceGroups/<rg>.",
+      "condition": "[equals(length(split(parameters('monitoringReaderScopes')[copyIndex()], '/')), 5)]",
+      "copy": {
+        "name": "resourceGroupScopeCopy",
+        "count": "[length(parameters('monitoringReaderScopes'))]"
+      },
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "[format('mr-rg-{0}', copyIndex())]",
+      "subscriptionId": "[split(parameters('monitoringReaderScopes')[copyIndex()], '/')[2]]",
+      "resourceGroup": "[split(parameters('monitoringReaderScopes')[copyIndex()], '/')[4]]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', variables('identityDeploymentName'))]"
+      ],
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "principalId": {
+              "type": "string"
+            },
+            "roleId": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceGroup().id, parameters('principalId'), parameters('roleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "ServicePrincipal"
+              }
+            }
+          ]
+        },
+        "parameters": {
+          "principalId": {
+            "value": "[reference(variables('identityDeploymentName')).outputs.principalId.value]"
+          },
+          "roleId": {
+            "value": "[variables('monitoringReaderRoleId')]"
+          }
+        }
+      }
+    },
+    {
+      "comment": "Single-resource assignments: scope IDs with more than 5 segments. Deployed into the resource's own resource group and attached to the resource via the extension-resource 'scope' property.",
+      "condition": "[greater(length(split(parameters('monitoringReaderScopes')[copyIndex()], '/')), 5)]",
+      "copy": {
+        "name": "resourceScopeCopy",
+        "count": "[length(parameters('monitoringReaderScopes'))]"
+      },
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "[format('mr-res-{0}', copyIndex())]",
+      "subscriptionId": "[split(parameters('monitoringReaderScopes')[copyIndex()], '/')[2]]",
+      "resourceGroup": "[split(parameters('monitoringReaderScopes')[copyIndex()], '/')[4]]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', variables('identityDeploymentName'))]"
+      ],
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "principalId": {
+              "type": "string"
+            },
+            "roleId": {
+              "type": "string"
+            },
+            "targetScope": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[parameters('targetScope')]",
+              "name": "[guid(parameters('targetScope'), parameters('principalId'), parameters('roleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "ServicePrincipal"
+              }
+            }
+          ]
+        },
+        "parameters": {
+          "principalId": {
+            "value": "[reference(variables('identityDeploymentName')).outputs.principalId.value]"
+          },
+          "roleId": {
+            "value": "[variables('monitoringReaderRoleId')]"
+          },
+          "targetScope": {
+            "value": "[parameters('monitoringReaderScopes')[copyIndex()]]"
+          }
+        }
+      }
+    },
+    {
+      "copy": {
+        "name": "kustoViewerCopy",
+        "count": "[length(parameters('kustoClusterIds'))]"
+      },
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "[format('kustoViewer-{0}', copyIndex())]",
+      "subscriptionId": "[split(parameters('kustoClusterIds')[copyIndex()], '/')[2]]",
+      "resourceGroup": "[split(parameters('kustoClusterIds')[copyIndex()], '/')[4]]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', variables('identityDeploymentName'))]"
+      ],
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "clusterName": {
+              "type": "string"
+            },
+            "clientId": {
+              "type": "string"
+            },
+            "tenantId": {
+              "type": "string"
+            },
+            "assignmentName": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Kusto/clusters/principalAssignments",
+              "apiVersion": "2023-05-02",
+              "name": "[format('{0}/{1}', parameters('clusterName'), parameters('assignmentName'))]",
+              "properties": {
+                "principalId": "[parameters('clientId')]",
+                "principalType": "App",
+                "role": "AllDatabasesViewer",
+                "tenantId": "[parameters('tenantId')]"
+              }
+            }
+          ]
+        },
+        "parameters": {
+          "clusterName": {
+            "value": "[last(split(parameters('kustoClusterIds')[copyIndex()], '/'))]"
+          },
+          "clientId": {
+            "value": "[reference(variables('identityDeploymentName')).outputs.clientId.value]"
+          },
+          "tenantId": {
+            "value": "[subscription().tenantId]"
+          },
+          "assignmentName": {
+            "value": "[variables('kustoViewerAssignmentName')]"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "clientId": {
+      "type": "string",
+      "value": "[reference(variables('identityDeploymentName')).outputs.clientId.value]"
+    },
+    "tenantId": {
+      "type": "string",
+      "value": "[subscription().tenantId]"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "value": "[subscription().subscriptionId]"
+    },
+    "instructions": {
+      "type": "string",
+      "value": "Copy clientId, tenantId, and subscriptionId above into Grafana's Azure Monitor (secretless) datasource, or paste them where the Connect flow asked for them. If you listed kustoClusterIds, this identity can now query those clusters too."
+    }
+  }
+}

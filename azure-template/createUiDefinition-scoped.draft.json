@@ -1,0 +1,136 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "basics": [
+      {
+        "name": "subject",
+        "type": "Microsoft.Common.TextBox",
+        "label": "Subject",
+        "toolTip": "Copy the subject value provided by the Grafana App for your connection.",
+        "constraints": {
+          "required": true,
+          "regex": "^.+$",
+          "validationMessage": "Paste the subject value shown in the Grafana App."
+        }
+      }
+    ],
+    "steps": [
+      {
+        "name": "scopes",
+        "label": "Monitoring Reader access",
+        "elements": [
+          {
+            "name": "info",
+            "type": "Microsoft.Common.InfoBox",
+            "visible": true,
+            "options": {
+              "icon": "Info",
+              "text": "Choose where Grafana's identity gets the Monitoring Reader role. Pick whole subscriptions, individual resource groups, individual resources, or any mix. You need permission to create role assignments at each scope you choose."
+            }
+          },
+          {
+            "name": "subscriptionsApi",
+            "type": "Microsoft.Solutions.ArmApiControl",
+            "request": {
+              "method": "GET",
+              "path": "subscriptions?api-version=2022-12-01"
+            }
+          },
+          {
+            "name": "resourceGroupsApi",
+            "type": "Microsoft.Solutions.ArmApiControl",
+            "request": {
+              "method": "GET",
+              "path": "[concat('subscriptions/', subscription().subscriptionId, '/resourcegroups?api-version=2022-09-01')]"
+            }
+          },
+          {
+            "name": "resourcesApi",
+            "type": "Microsoft.Solutions.ArmApiControl",
+            "request": {
+              "method": "GET",
+              "path": "[concat('subscriptions/', subscription().subscriptionId, '/resources?api-version=2022-09-01')]"
+            }
+          },
+          {
+            "name": "subscriptionScopes",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Subscriptions (access to everything inside)",
+            "toolTip": "Grants Monitoring Reader on the entire subscription.",
+            "multiselect": true,
+            "selectAll": false,
+            "filter": true,
+            "required": false,
+            "constraints": {
+              "allowedValues": "[map(steps('scopes').subscriptionsApi.value, (item) => parse(concat('{\"label\":\"', item.displayName, '\",\"value\":\"', item.id, '\"}')))]"
+            }
+          },
+          {
+            "name": "resourceGroupScopes",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Resource groups (in the current subscription)",
+            "toolTip": "Grants Monitoring Reader on every resource in each selected resource group.",
+            "multiselect": true,
+            "selectAll": false,
+            "filter": true,
+            "required": false,
+            "constraints": {
+              "allowedValues": "[map(steps('scopes').resourceGroupsApi.value, (item) => parse(concat('{\"label\":\"', item.name, '\",\"value\":\"', item.id, '\"}')))]"
+            }
+          },
+          {
+            "name": "resourceScopes",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Individual resources (in the current subscription)",
+            "toolTip": "Grants Monitoring Reader on only the selected resources.",
+            "multiselect": true,
+            "selectAll": false,
+            "filter": true,
+            "required": false,
+            "constraints": {
+              "allowedValues": "[map(steps('scopes').resourcesApi.value, (item) => parse(concat('{\"label\":\"', item.name, ' (', item.type, ')\",\"value\":\"', item.id, '\"}')))]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "identity",
+        "label": "Identity",
+        "elements": [
+          {
+            "name": "resourceGroupName",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Resource group for the managed identity",
+            "defaultValue": "rg-grafana-azure",
+            "toolTip": "Created if it does not exist.",
+            "constraints": {
+              "required": true,
+              "regex": "^[-\\w\\._\\(\\)]{1,90}$",
+              "validationMessage": "Enter a valid resource group name."
+            }
+          },
+          {
+            "name": "managedIdentityName",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Managed identity name",
+            "defaultValue": "mi-grafana-poc",
+            "constraints": {
+              "required": true,
+              "regex": "^[a-zA-Z0-9][a-zA-Z0-9-_]{2,127}$",
+              "validationMessage": "Enter a valid managed identity name."
+            }
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "location": "[location()]",
+      "subject": "[basics('subject')]",
+      "resourceGroupName": "[steps('identity').resourceGroupName]",
+      "managedIdentityName": "[steps('identity').managedIdentityName]",
+      "monitoringReaderScopes": "[union(coalesce(steps('scopes').subscriptionScopes, parse('[]')), coalesce(steps('scopes').resourceGroupScopes, parse('[]')), coalesce(steps('scopes').resourceScopes, parse('[]')))]"
+    }
+  }
+}
