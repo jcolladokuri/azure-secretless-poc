@@ -56,7 +56,8 @@
             "filter": true,
             "constraints": {
               "allowedValues": "[parse(concat('[{\"label\":\"Current subscription (everything inside)\",\"value\":\"/subscriptions/', subscription().subscriptionId, '\"}]'))]"
-            }
+            },
+            "defaultValue": []
           },
           {
             "name": "resourceGroupScopes",
@@ -68,7 +69,8 @@
             "filter": true,
             "constraints": {
               "allowedValues": "[map(steps('scopes').resourceGroupsApi.value, (item) => parse(concat('{\"label\":\"', item.name, '\",\"value\":\"', item.id, '\"}')))]"
-            }
+            },
+            "defaultValue": []
           },
           {
             "name": "resourceScopes",
@@ -80,7 +82,8 @@
             "filter": true,
             "constraints": {
               "allowedValues": "[map(steps('scopes').resourcesApi.value, (item) => parse(concat('{\"label\":\"', item.name, ' (', item.type, ')\",\"value\":\"', item.id, '\"}')))]"
-            }
+            },
+            "defaultValue": []
           }
         ]
       },
