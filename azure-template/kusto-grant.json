@@ -26,7 +26,7 @@
     }
   },
   "variables": {
-    "assignmentName": "grafana-poc-viewer"
+    "assignmentName": "[format('grafana-kusto-viewer-{0}', uniqueString(parameters('clientId')))]"
   },
   "resources": [
     {

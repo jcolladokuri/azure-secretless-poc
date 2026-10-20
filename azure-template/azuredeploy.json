@@ -7,9 +7,9 @@
   "parameters": {
     "managedIdentityName": {
       "type": "string",
-      "defaultValue": "mi-grafana-poc",
+      "defaultValue": "",
       "metadata": {
-        "description": "Name for the managed identity Grafana will authenticate as."
+        "description": "Optional. Leave empty to derive a unique name (mi-grafana-<hash>) from the issuer and subject, so each Grafana connection gets its own identity, federated credential, and role assignments. Set it only to reuse or pin a specific identity; two connections sharing a name overwrite each other's subject."
       }
     },
     "issuer": {
@@ -21,9 +21,9 @@
     },
     "subject": {
       "type": "string",
-      "defaultValue": "stack:acme-prod:conn:azure-real",
+      "defaultValue": "",
       "metadata": {
-        "description": "The fixed identifier for your Grafana connection. Do not change this — Grafana derives it server-side and a mismatch here means auth will fail with AADSTS700213."
+        "description": "Copy the subject value provided by the Grafana App for your connection and paste it here exactly as shown. A mismatch means auth will fail with AADSTS700213."
       }
     },
     "audience": {
@@ -42,23 +42,23 @@
     }
   },
   "variables": {
-    "federatedCredentialName": "grafana-poc",
+    "federatedCredentialName": "grafana-federated",
     "monitoringReaderRoleId": "43d0d8ad-25c7-4714-9337-8ba259a9fe05",
-    "kustoViewerAssignmentName": "grafana-poc-viewer"
+    "identityName": "[if(empty(parameters('managedIdentityName')), format('mi-grafana-{0}', uniqueString(parameters('issuer'), parameters('subject'))), parameters('managedIdentityName'))]"
   },
   "resources": [
     {
       "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
       "apiVersion": "2023-01-31",
-      "name": "[parameters('managedIdentityName')]",
+      "name": "[variables('identityName')]",
       "location": "[resourceGroup().location]"
     },
     {
       "type": "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials",
       "apiVersion": "2023-01-31",
-      "name": "[format('{0}/{1}', parameters('managedIdentityName'), variables('federatedCredentialName'))]",
+      "name": "[format('{0}/{1}', variables('identityName'), variables('federatedCredentialName'))]",
       "dependsOn": [
-        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]"
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName'))]"
       ],
       "properties": {
         "issuer": "[parameters('issuer')]",
@@ -75,7 +75,7 @@
       "subscriptionId": "[subscription().subscriptionId]",
       "location": "[resourceGroup().location]",
       "dependsOn": [
-        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]"
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName'))]"
       ],
       "properties": {
         "expressionEvaluationOptions": {
@@ -108,7 +108,7 @@
         },
         "parameters": {
           "principalId": {
-            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), '2023-01-31', 'Full').properties.principalId]"
+            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), '2023-01-31', 'Full').properties.principalId]"
           },
           "monitoringReaderRoleId": {
             "value": "[variables('monitoringReaderRoleId')]"
@@ -128,7 +128,7 @@
       "subscriptionId": "[split(parameters('kustoClusterIds')[copyIndex()], '/')[2]]",
       "resourceGroup": "[split(parameters('kustoClusterIds')[copyIndex()], '/')[4]]",
       "dependsOn": [
-        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]"
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName'))]"
       ],
       "properties": {
         "expressionEvaluationOptions": {
@@ -171,13 +171,13 @@
             "value": "[last(split(parameters('kustoClusterIds')[copyIndex()], '/'))]"
           },
           "clientId": {
-            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), '2023-01-31', 'Full').properties.clientId]"
+            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), '2023-01-31', 'Full').properties.clientId]"
           },
           "tenantId": {
             "value": "[subscription().tenantId]"
           },
           "assignmentName": {
-            "value": "[variables('kustoViewerAssignmentName')]"
+            "value": "[format('grafana-kusto-viewer-{0}', uniqueString(reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), '2023-01-31', 'Full').properties.clientId))]"
           }
         }
       }
@@ -186,7 +186,7 @@
   "outputs": {
     "clientId": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), '2023-01-31', 'Full').properties.clientId]"
+      "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), '2023-01-31', 'Full').properties.clientId]"
     },
     "tenantId": {
       "type": "string",
@@ -199,6 +199,10 @@
     "instructions": {
       "type": "string",
       "value": "Copy clientId, tenantId, and subscriptionId above into Grafana's Azure Monitor (secretless) datasource, or paste them where the Connect flow asked for them. If you listed kustoClusterIds, this identity can now query those clusters too."
+    },
+    "managedIdentityName": {
+      "type": "string",
+      "value": "[variables('identityName')]"
     }
   }
 }

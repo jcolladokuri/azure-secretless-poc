@@ -9,14 +9,14 @@
       "type": "string",
       "defaultValue": "rg-grafana-azure",
       "metadata": {
-        "description": "Resource group that holds the managed identity. Created if it does not exist."
+        "description": "Resource group that holds the managed identity. Created if createResourceGroup is true, otherwise it must already exist."
       }
     },
     "managedIdentityName": {
       "type": "string",
-      "defaultValue": "mi-grafana-poc",
+      "defaultValue": "",
       "metadata": {
-        "description": "Name for the managed identity Grafana will authenticate as."
+        "description": "Optional. Leave empty to derive a unique name (mi-grafana-<hash>) from the issuer and subject, so each Grafana connection gets its own identity, federated credential, and role assignments. Set it only to reuse or pin a specific identity; two connections sharing a name overwrite each other's subject."
       }
     },
     "issuer": {
@@ -74,22 +74,30 @@
       "metadata": {
         "description": "Individual resource IDs in the subscription being deployed to. Set by the portal form."
       }
+    },
+    "createResourceGroup": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "true creates the resource group named in resourceGroupName; false deploys into an existing resource group of that name (you need write access to it)."
+      }
     }
   },
   "variables": {
-    "federatedCredentialName": "grafana-poc",
+    "federatedCredentialName": "grafana-federated",
     "monitoringReaderRoleId": "43d0d8ad-25c7-4714-9337-8ba259a9fe05",
-    "kustoViewerAssignmentName": "grafana-poc-viewer",
     "identityDeploymentName": "grafana-identity",
     "identityDeploymentId": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Resources/deployments/{2}', subscription().subscriptionId, parameters('resourceGroupName'), variables('identityDeploymentName'))]",
-    "allScopes": "[union(parameters('monitoringReaderScopes'), parameters('subscriptionScopes'), parameters('resourceGroupScopes'), parameters('resourceScopes'))]"
+    "allScopes": "[union(parameters('monitoringReaderScopes'), parameters('subscriptionScopes'), parameters('resourceGroupScopes'), parameters('resourceScopes'))]",
+    "identityName": "[if(empty(parameters('managedIdentityName')), format('mi-grafana-{0}', uniqueString(parameters('issuer'), parameters('subject'))), parameters('managedIdentityName'))]"
   },
   "resources": [
     {
       "type": "Microsoft.Resources/resourceGroups",
       "apiVersion": "2022-09-01",
       "name": "[parameters('resourceGroupName')]",
-      "location": "[deployment().location]"
+      "location": "[deployment().location]",
+      "condition": "[parameters('createResourceGroup')]"
     },
     {
       "type": "Microsoft.Resources/deployments",
@@ -108,9 +116,6 @@
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
           "parameters": {
-            "location": {
-              "type": "string"
-            },
             "managedIdentityName": {
               "type": "string"
             },
@@ -132,7 +137,7 @@
               "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
               "apiVersion": "2023-01-31",
               "name": "[parameters('managedIdentityName')]",
-              "location": "[parameters('location')]"
+              "location": "[resourceGroup().location]"
             },
             {
               "type": "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials",
@@ -162,11 +167,8 @@
           }
         },
         "parameters": {
-          "location": {
-            "value": "[deployment().location]"
-          },
           "managedIdentityName": {
-            "value": "[parameters('managedIdentityName')]"
+            "value": "[variables('identityName')]"
           },
           "federatedCredentialName": {
             "value": "[variables('federatedCredentialName')]"
@@ -408,7 +410,7 @@
             "value": "[subscription().tenantId]"
           },
           "assignmentName": {
-            "value": "[variables('kustoViewerAssignmentName')]"
+            "value": "[format('grafana-kusto-viewer-{0}', uniqueString(reference(variables('identityDeploymentId'), '2022-09-01').outputs.clientId.value))]"
           }
         }
       },
@@ -435,6 +437,10 @@
     "ignoredScopes": {
       "type": "array",
       "value": "[concat(filter(variables('allScopes'), lambda('s', not(equals(split(lambdaVariables('s'), '/')[2], subscription().subscriptionId)))), filter(parameters('kustoClusterIds'), lambda('s', not(equals(split(lambdaVariables('s'), '/')[2], subscription().subscriptionId)))))]"
+    },
+    "managedIdentityName": {
+      "type": "string",
+      "value": "[variables('identityName')]"
     }
   }
 }

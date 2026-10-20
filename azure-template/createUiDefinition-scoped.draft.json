@@ -89,38 +89,72 @@
         "label": "Identity",
         "elements": [
           {
-            "name": "resourceGroupName",
+            "name": "resourceGroupMode",
+            "type": "Microsoft.Common.OptionsGroup",
+            "label": "Resource group",
+            "defaultValue": "Create new",
+            "toolTip": "Where the managed identity lives. Choose an existing group or create a new one.",
+            "constraints": {
+              "allowedValues": [
+                {
+                  "label": "Create new",
+                  "value": "new"
+                },
+                {
+                  "label": "Use existing",
+                  "value": "existing"
+                }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "newResourceGroupName",
             "type": "Microsoft.Common.TextBox",
-            "label": "Resource group for the managed identity",
+            "label": "New resource group name",
             "defaultValue": "rg-grafana-azure",
             "toolTip": "Created if it does not exist.",
             "constraints": {
               "required": true,
               "regex": "^[-\\w\\._\\(\\)]{1,90}$",
               "validationMessage": "Enter a valid resource group name."
+            },
+            "visible": "[equals(steps('identity').resourceGroupMode, 'new')]"
+          },
+          {
+            "name": "existingResourceGroupName",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Existing resource group",
+            "toolTip": "Resource group to place the managed identity in.",
+            "visible": "[equals(steps('identity').resourceGroupMode, 'existing')]",
+            "constraints": {
+              "required": true,
+              "allowedValues": "[map(steps('scopes').resourceGroupsApi.value, (item) => parse(concat('{\"label\":\"', item.name, '\",\"value\":\"', item.name, '\"}')))]"
             }
           },
           {
             "name": "managedIdentityName",
             "type": "Microsoft.Common.TextBox",
-            "label": "Managed identity name",
-            "defaultValue": "mi-grafana-poc",
+            "label": "Managed identity name (optional)",
+            "defaultValue": "",
             "constraints": {
-              "required": true,
-              "regex": "^[a-zA-Z0-9][a-zA-Z0-9-_]{2,127}$",
+              "required": false,
+              "regex": "^$|^[a-zA-Z0-9][a-zA-Z0-9-_]{2,127}$",
               "validationMessage": "Enter a valid managed identity name."
-            }
+            },
+            "toolTip": "Leave empty to create a unique identity per Grafana connection (mi-grafana-<hash>). Set a name only to reuse a specific identity; connections sharing an identity overwrite each other's subject."
           }
         ]
       }
     ],
     "outputs": {
       "subject": "[basics('subject')]",
-      "resourceGroupName": "[steps('identity').resourceGroupName]",
+      "resourceGroupName": "[if(equals(steps('identity').resourceGroupMode, 'new'), steps('identity').newResourceGroupName, steps('identity').existingResourceGroupName)]",
       "managedIdentityName": "[steps('identity').managedIdentityName]",
       "subscriptionScopes": "[steps('scopes').subscriptionScopes]",
       "resourceGroupScopes": "[steps('scopes').resourceGroupScopes]",
-      "resourceScopes": "[steps('scopes').resourceScopes]"
+      "resourceScopes": "[steps('scopes').resourceScopes]",
+      "createResourceGroup": "[equals(steps('identity').resourceGroupMode, 'new')]"
     }
   }
 }
