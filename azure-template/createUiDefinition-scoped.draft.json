@@ -113,7 +113,7 @@
             "type": "Microsoft.Common.TextBox",
             "label": "New resource group name",
             "defaultValue": "rg-grafana-azure",
-            "toolTip": "Created if it does not exist.",
+            "toolTip": "A new resource group is created in the deployment region. If a group with this name already exists, choose Use existing instead.",
             "constraints": {
               "required": true,
               "regex": "^[-\\w\\._\\(\\)]{1,90}$",
@@ -135,14 +135,14 @@
           {
             "name": "managedIdentityName",
             "type": "Microsoft.Common.TextBox",
-            "label": "Managed identity name (optional)",
+            "label": "Managed identity name override (optional)",
             "defaultValue": "",
             "constraints": {
               "required": false,
               "regex": "^$|^[a-zA-Z0-9][a-zA-Z0-9-_]{2,127}$",
               "validationMessage": "Enter a valid managed identity name."
             },
-            "toolTip": "Leave empty to create a unique identity per Grafana connection (mi-grafana-<hash>). Set a name only to reuse a specific identity; connections sharing an identity overwrite each other's subject."
+            "toolTip": "Advanced. Leave empty: a unique name (mi-grafana-<hash>) is generated for this connection and shown in the deployment outputs. Set a name only to pin or reuse a specific identity; connections that share an identity overwrite each other's subject."
           }
         ]
       }
