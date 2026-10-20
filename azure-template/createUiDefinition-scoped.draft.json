@@ -118,7 +118,9 @@
       "subject": "[basics('subject')]",
       "resourceGroupName": "[steps('identity').resourceGroupName]",
       "managedIdentityName": "[steps('identity').managedIdentityName]",
-      "monitoringReaderScopes": "[union(coalesce(steps('scopes').subscriptionScopes, parse('[]')), coalesce(steps('scopes').resourceGroupScopes, parse('[]')), coalesce(steps('scopes').resourceScopes, parse('[]')))]"
+      "subscriptionScopes": "[steps('scopes').subscriptionScopes]",
+      "resourceGroupScopes": "[steps('scopes').resourceGroupScopes]",
+      "resourceScopes": "[steps('scopes').resourceScopes]"
     }
   }
 }

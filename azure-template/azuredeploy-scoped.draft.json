@@ -44,7 +44,7 @@
       "type": "array",
       "defaultValue": [],
       "metadata": {
-        "description": "Full Azure resource IDs in the subscription being deployed to to grant Monitoring Reader on. Each entry can be the subscription itself (/subscriptions/<id>), a resource group (/subscriptions/<id>/resourceGroups/<rg>), or a single resource. Entries in any other subscription are ignored (see the ignoredScopes output); deploy again in that subscription instead. The deployer needs role-assignment write permission on each."
+        "description": "Additional scope IDs to grant Monitoring Reader on, merged with the three selections below. Full Azure resource IDs in the subscription being deployed to to grant Monitoring Reader on. Each entry can be the subscription itself (/subscriptions/<id>), a resource group (/subscriptions/<id>/resourceGroups/<rg>), or a single resource. Entries in any other subscription are ignored (see the ignoredScopes output); deploy again in that subscription instead. The deployer needs role-assignment write permission on each."
       }
     },
     "kustoClusterIds": {
@@ -53,6 +53,27 @@
       "metadata": {
         "description": "Optional. Full resource IDs of Azure Data Explorer (Kusto) clusters in the subscription being deployed to, e.g. /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Kusto/clusters/<name>. Azure RBAC alone doesn't grant Kusto query access — this grants Kusto's separate 'AllDatabasesViewer' cluster role. Clusters in other subscriptions are ignored (see ignoredScopes). Leave empty to skip."
       }
+    },
+    "subscriptionScopes": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Subscription scope IDs (/subscriptions/<id>). Only the subscription being deployed to is supported. Set by the portal form."
+      }
+    },
+    "resourceGroupScopes": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Resource group scope IDs in the subscription being deployed to. Set by the portal form."
+      }
+    },
+    "resourceScopes": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Individual resource IDs in the subscription being deployed to. Set by the portal form."
+      }
     }
   },
   "variables": {
@@ -60,7 +81,8 @@
     "monitoringReaderRoleId": "43d0d8ad-25c7-4714-9337-8ba259a9fe05",
     "kustoViewerAssignmentName": "grafana-poc-viewer",
     "identityDeploymentName": "grafana-identity",
-    "identityDeploymentId": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Resources/deployments/{2}', subscription().subscriptionId, parameters('resourceGroupName'), variables('identityDeploymentName'))]"
+    "identityDeploymentId": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Resources/deployments/{2}', subscription().subscriptionId, parameters('resourceGroupName'), variables('identityDeploymentName'))]",
+    "allScopes": "[union(parameters('monitoringReaderScopes'), parameters('subscriptionScopes'), parameters('resourceGroupScopes'), parameters('resourceScopes'))]"
   },
   "resources": [
     {
@@ -163,10 +185,10 @@
     },
     {
       "comments": "Subscription-scope assignment: scope IDs with 3 segments, e.g. /subscriptions/<id>. Only the subscription this template is deployed to is supported; nested deployments cannot change subscription at subscription scope.",
-      "condition": "[and(equals(length(split(parameters('monitoringReaderScopes')[copyIndex()], '/')), 3), equals(split(parameters('monitoringReaderScopes')[copyIndex()], '/')[2], subscription().subscriptionId))]",
+      "condition": "[and(equals(length(split(variables('allScopes')[copyIndex()], '/')), 3), equals(split(variables('allScopes')[copyIndex()], '/')[2], subscription().subscriptionId))]",
       "copy": {
         "name": "subscriptionScopeCopy",
-        "count": "[length(parameters('monitoringReaderScopes'))]"
+        "count": "[length(variables('allScopes'))]"
       },
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2022-09-01",
@@ -216,15 +238,15 @@
     },
     {
       "comments": "Resource-group-scope assignments: scope IDs with 5 segments, e.g. /subscriptions/<id>/resourceGroups/<rg>.",
-      "condition": "[and(equals(length(split(parameters('monitoringReaderScopes')[copyIndex()], '/')), 5), equals(split(parameters('monitoringReaderScopes')[copyIndex()], '/')[2], subscription().subscriptionId))]",
+      "condition": "[and(equals(length(split(variables('allScopes')[copyIndex()], '/')), 5), equals(split(variables('allScopes')[copyIndex()], '/')[2], subscription().subscriptionId))]",
       "copy": {
         "name": "resourceGroupScopeCopy",
-        "count": "[length(parameters('monitoringReaderScopes'))]"
+        "count": "[length(variables('allScopes'))]"
       },
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2022-09-01",
       "name": "[format('mr-rg-{0}', copyIndex())]",
-      "resourceGroup": "[if(greater(length(split(parameters('monitoringReaderScopes')[copyIndex()], '/')), 4), split(parameters('monitoringReaderScopes')[copyIndex()], '/')[4], parameters('resourceGroupName'))]",
+      "resourceGroup": "[if(greater(length(split(variables('allScopes')[copyIndex()], '/')), 4), split(variables('allScopes')[copyIndex()], '/')[4], parameters('resourceGroupName'))]",
       "dependsOn": [
         "[variables('identityDeploymentId')]"
       ],
@@ -269,15 +291,15 @@
     },
     {
       "comments": "Single-resource assignments: scope IDs with more than 5 segments. Deployed into the resource's own resource group and attached to the resource via the extension-resource 'scope' property.",
-      "condition": "[and(greater(length(split(parameters('monitoringReaderScopes')[copyIndex()], '/')), 5), equals(split(parameters('monitoringReaderScopes')[copyIndex()], '/')[2], subscription().subscriptionId))]",
+      "condition": "[and(greater(length(split(variables('allScopes')[copyIndex()], '/')), 5), equals(split(variables('allScopes')[copyIndex()], '/')[2], subscription().subscriptionId))]",
       "copy": {
         "name": "resourceScopeCopy",
-        "count": "[length(parameters('monitoringReaderScopes'))]"
+        "count": "[length(variables('allScopes'))]"
       },
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2022-09-01",
       "name": "[format('mr-res-{0}', copyIndex())]",
-      "resourceGroup": "[if(greater(length(split(parameters('monitoringReaderScopes')[copyIndex()], '/')), 4), split(parameters('monitoringReaderScopes')[copyIndex()], '/')[4], parameters('resourceGroupName'))]",
+      "resourceGroup": "[if(greater(length(split(variables('allScopes')[copyIndex()], '/')), 4), split(variables('allScopes')[copyIndex()], '/')[4], parameters('resourceGroupName'))]",
       "dependsOn": [
         "[variables('identityDeploymentId')]"
       ],
@@ -322,7 +344,7 @@
             "value": "[variables('monitoringReaderRoleId')]"
           },
           "targetScope": {
-            "value": "[parameters('monitoringReaderScopes')[copyIndex()]]"
+            "value": "[variables('allScopes')[copyIndex()]]"
           }
         }
       }
@@ -412,7 +434,7 @@
     },
     "ignoredScopes": {
       "type": "array",
-      "value": "[concat(filter(parameters('monitoringReaderScopes'), lambda('s', not(equals(split(lambdaVariables('s'), '/')[2], subscription().subscriptionId)))), filter(parameters('kustoClusterIds'), lambda('s', not(equals(split(lambdaVariables('s'), '/')[2], subscription().subscriptionId)))))]"
+      "value": "[concat(filter(variables('allScopes'), lambda('s', not(equals(split(lambdaVariables('s'), '/')[2], subscription().subscriptionId)))), filter(parameters('kustoClusterIds'), lambda('s', not(equals(split(lambdaVariables('s'), '/')[2], subscription().subscriptionId)))))]"
     }
   }
 }
