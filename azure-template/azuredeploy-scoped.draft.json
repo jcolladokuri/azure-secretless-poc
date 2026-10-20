@@ -5,13 +5,6 @@
     "description": "DRAFT. Subscription-level variant of azuredeploy.json. Creates a resource group, a managed identity with a federated credential trusting Grafana's OIDC issuer, and Monitoring Reader role assignments at every scope listed in monitoringReaderScopes (subscriptions, resource groups, or individual resources, in any subscription the deployer can write role assignments in). Optionally grants AllDatabasesViewer on listed Azure Data Explorer clusters. No client secret is created."
   },
   "parameters": {
-    "location": {
-      "type": "string",
-      "defaultValue": "[deployment().location]",
-      "metadata": {
-        "description": "Region for the resource group and managed identity."
-      }
-    },
     "resourceGroupName": {
       "type": "string",
       "defaultValue": "rg-grafana-azure",
@@ -51,14 +44,14 @@
       "type": "array",
       "defaultValue": [],
       "metadata": {
-        "description": "Full Azure resource IDs to grant Monitoring Reader on. Each entry can be a subscription (/subscriptions/<id>), a resource group (/subscriptions/<id>/resourceGroups/<rg>), or a single resource (/subscriptions/<id>/resourceGroups/<rg>/providers/<type>/<name>). The deployer needs role-assignment write permission on each."
+        "description": "Full Azure resource IDs in the subscription being deployed to to grant Monitoring Reader on. Each entry can be the subscription itself (/subscriptions/<id>), a resource group (/subscriptions/<id>/resourceGroups/<rg>), or a single resource. Entries in any other subscription are ignored (see the ignoredScopes output); deploy again in that subscription instead. The deployer needs role-assignment write permission on each."
       }
     },
     "kustoClusterIds": {
       "type": "array",
       "defaultValue": [],
       "metadata": {
-        "description": "Optional. Full resource IDs of Azure Data Explorer (Kusto) clusters to also grant this identity read access to, e.g. /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Kusto/clusters/<name>. Azure RBAC alone doesn't grant Kusto query access — this grants Kusto's separate 'AllDatabasesViewer' cluster role. Leave empty to skip."
+        "description": "Optional. Full resource IDs of Azure Data Explorer (Kusto) clusters in the subscription being deployed to, e.g. /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Kusto/clusters/<name>. Azure RBAC alone doesn't grant Kusto query access — this grants Kusto's separate 'AllDatabasesViewer' cluster role. Clusters in other subscriptions are ignored (see ignoredScopes). Leave empty to skip."
       }
     }
   },
@@ -66,14 +59,15 @@
     "federatedCredentialName": "grafana-poc",
     "monitoringReaderRoleId": "43d0d8ad-25c7-4714-9337-8ba259a9fe05",
     "kustoViewerAssignmentName": "grafana-poc-viewer",
-    "identityDeploymentName": "grafana-identity"
+    "identityDeploymentName": "grafana-identity",
+    "identityDeploymentId": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Resources/deployments/{2}', subscription().subscriptionId, parameters('resourceGroupName'), variables('identityDeploymentName'))]"
   },
   "resources": [
     {
       "type": "Microsoft.Resources/resourceGroups",
       "apiVersion": "2022-09-01",
       "name": "[parameters('resourceGroupName')]",
-      "location": "[parameters('location')]"
+      "location": "[deployment().location]"
     },
     {
       "type": "Microsoft.Resources/deployments",
@@ -147,7 +141,7 @@
         },
         "parameters": {
           "location": {
-            "value": "[parameters('location')]"
+            "value": "[deployment().location]"
           },
           "managedIdentityName": {
             "value": "[parameters('managedIdentityName')]"
@@ -168,8 +162,8 @@
       }
     },
     {
-      "comment": "Subscription-scope assignments: scope IDs with 3 segments, e.g. /subscriptions/<id>.",
-      "condition": "[equals(length(split(parameters('monitoringReaderScopes')[copyIndex()], '/')), 3)]",
+      "comments": "Subscription-scope assignment: scope IDs with 3 segments, e.g. /subscriptions/<id>. Only the subscription this template is deployed to is supported; nested deployments cannot change subscription at subscription scope.",
+      "condition": "[and(equals(length(split(parameters('monitoringReaderScopes')[copyIndex()], '/')), 3), equals(split(parameters('monitoringReaderScopes')[copyIndex()], '/')[2], subscription().subscriptionId))]",
       "copy": {
         "name": "subscriptionScopeCopy",
         "count": "[length(parameters('monitoringReaderScopes'))]"
@@ -177,10 +171,9 @@
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2022-09-01",
       "name": "[format('mr-sub-{0}', copyIndex())]",
-      "location": "[parameters('location')]",
-      "subscriptionId": "[split(parameters('monitoringReaderScopes')[copyIndex()], '/')[2]]",
+      "location": "[deployment().location]",
       "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', variables('identityDeploymentName'))]"
+        "[variables('identityDeploymentId')]"
       ],
       "properties": {
         "expressionEvaluationOptions": {
@@ -213,7 +206,7 @@
         },
         "parameters": {
           "principalId": {
-            "value": "[reference(variables('identityDeploymentName')).outputs.principalId.value]"
+            "value": "[reference(variables('identityDeploymentId'), '2022-09-01').outputs.principalId.value]"
           },
           "roleId": {
             "value": "[variables('monitoringReaderRoleId')]"
@@ -222,8 +215,8 @@
       }
     },
     {
-      "comment": "Resource-group-scope assignments: scope IDs with 5 segments, e.g. /subscriptions/<id>/resourceGroups/<rg>.",
-      "condition": "[equals(length(split(parameters('monitoringReaderScopes')[copyIndex()], '/')), 5)]",
+      "comments": "Resource-group-scope assignments: scope IDs with 5 segments, e.g. /subscriptions/<id>/resourceGroups/<rg>.",
+      "condition": "[and(equals(length(split(parameters('monitoringReaderScopes')[copyIndex()], '/')), 5), equals(split(parameters('monitoringReaderScopes')[copyIndex()], '/')[2], subscription().subscriptionId))]",
       "copy": {
         "name": "resourceGroupScopeCopy",
         "count": "[length(parameters('monitoringReaderScopes'))]"
@@ -231,10 +224,9 @@
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2022-09-01",
       "name": "[format('mr-rg-{0}', copyIndex())]",
-      "subscriptionId": "[split(parameters('monitoringReaderScopes')[copyIndex()], '/')[2]]",
-      "resourceGroup": "[split(parameters('monitoringReaderScopes')[copyIndex()], '/')[4]]",
+      "resourceGroup": "[if(greater(length(split(parameters('monitoringReaderScopes')[copyIndex()], '/')), 4), split(parameters('monitoringReaderScopes')[copyIndex()], '/')[4], parameters('resourceGroupName'))]",
       "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', variables('identityDeploymentName'))]"
+        "[variables('identityDeploymentId')]"
       ],
       "properties": {
         "expressionEvaluationOptions": {
@@ -267,7 +259,7 @@
         },
         "parameters": {
           "principalId": {
-            "value": "[reference(variables('identityDeploymentName')).outputs.principalId.value]"
+            "value": "[reference(variables('identityDeploymentId'), '2022-09-01').outputs.principalId.value]"
           },
           "roleId": {
             "value": "[variables('monitoringReaderRoleId')]"
@@ -276,8 +268,8 @@
       }
     },
     {
-      "comment": "Single-resource assignments: scope IDs with more than 5 segments. Deployed into the resource's own resource group and attached to the resource via the extension-resource 'scope' property.",
-      "condition": "[greater(length(split(parameters('monitoringReaderScopes')[copyIndex()], '/')), 5)]",
+      "comments": "Single-resource assignments: scope IDs with more than 5 segments. Deployed into the resource's own resource group and attached to the resource via the extension-resource 'scope' property.",
+      "condition": "[and(greater(length(split(parameters('monitoringReaderScopes')[copyIndex()], '/')), 5), equals(split(parameters('monitoringReaderScopes')[copyIndex()], '/')[2], subscription().subscriptionId))]",
       "copy": {
         "name": "resourceScopeCopy",
         "count": "[length(parameters('monitoringReaderScopes'))]"
@@ -285,10 +277,9 @@
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2022-09-01",
       "name": "[format('mr-res-{0}', copyIndex())]",
-      "subscriptionId": "[split(parameters('monitoringReaderScopes')[copyIndex()], '/')[2]]",
-      "resourceGroup": "[split(parameters('monitoringReaderScopes')[copyIndex()], '/')[4]]",
+      "resourceGroup": "[if(greater(length(split(parameters('monitoringReaderScopes')[copyIndex()], '/')), 4), split(parameters('monitoringReaderScopes')[copyIndex()], '/')[4], parameters('resourceGroupName'))]",
       "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', variables('identityDeploymentName'))]"
+        "[variables('identityDeploymentId')]"
       ],
       "properties": {
         "expressionEvaluationOptions": {
@@ -325,7 +316,7 @@
         },
         "parameters": {
           "principalId": {
-            "value": "[reference(variables('identityDeploymentName')).outputs.principalId.value]"
+            "value": "[reference(variables('identityDeploymentId'), '2022-09-01').outputs.principalId.value]"
           },
           "roleId": {
             "value": "[variables('monitoringReaderRoleId')]"
@@ -344,10 +335,9 @@
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2022-09-01",
       "name": "[format('kustoViewer-{0}', copyIndex())]",
-      "subscriptionId": "[split(parameters('kustoClusterIds')[copyIndex()], '/')[2]]",
-      "resourceGroup": "[split(parameters('kustoClusterIds')[copyIndex()], '/')[4]]",
+      "resourceGroup": "[if(greater(length(split(parameters('kustoClusterIds')[copyIndex()], '/')), 4), split(parameters('kustoClusterIds')[copyIndex()], '/')[4], parameters('resourceGroupName'))]",
       "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', variables('identityDeploymentName'))]"
+        "[variables('identityDeploymentId')]"
       ],
       "properties": {
         "expressionEvaluationOptions": {
@@ -390,7 +380,7 @@
             "value": "[last(split(parameters('kustoClusterIds')[copyIndex()], '/'))]"
           },
           "clientId": {
-            "value": "[reference(variables('identityDeploymentName')).outputs.clientId.value]"
+            "value": "[reference(variables('identityDeploymentId'), '2022-09-01').outputs.clientId.value]"
           },
           "tenantId": {
             "value": "[subscription().tenantId]"
@@ -399,13 +389,14 @@
             "value": "[variables('kustoViewerAssignmentName')]"
           }
         }
-      }
+      },
+      "condition": "[equals(split(parameters('kustoClusterIds')[copyIndex()], '/')[2], subscription().subscriptionId)]"
     }
   ],
   "outputs": {
     "clientId": {
       "type": "string",
-      "value": "[reference(variables('identityDeploymentName')).outputs.clientId.value]"
+      "value": "[reference(variables('identityDeploymentId'), '2022-09-01').outputs.clientId.value]"
     },
     "tenantId": {
       "type": "string",
@@ -418,6 +409,10 @@
     "instructions": {
       "type": "string",
       "value": "Copy clientId, tenantId, and subscriptionId above into Grafana's Azure Monitor (secretless) datasource, or paste them where the Connect flow asked for them. If you listed kustoClusterIds, this identity can now query those clusters too."
+    },
+    "ignoredScopes": {
+      "type": "array",
+      "value": "[concat(filter(parameters('monitoringReaderScopes'), lambda('s', not(equals(split(lambdaVariables('s'), '/')[2], subscription().subscriptionId)))), filter(parameters('kustoClusterIds'), lambda('s', not(equals(split(lambdaVariables('s'), '/')[2], subscription().subscriptionId)))))]"
     }
   }
 }

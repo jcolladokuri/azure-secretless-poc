@@ -31,14 +31,6 @@
             }
           },
           {
-            "name": "subscriptionsApi",
-            "type": "Microsoft.Solutions.ArmApiControl",
-            "request": {
-              "method": "GET",
-              "path": "subscriptions?api-version=2022-12-01"
-            }
-          },
-          {
             "name": "resourceGroupsApi",
             "type": "Microsoft.Solutions.ArmApiControl",
             "request": {
@@ -57,13 +49,13 @@
           {
             "name": "subscriptionScopes",
             "type": "Microsoft.Common.DropDown",
-            "label": "Subscriptions (access to everything inside)",
-            "toolTip": "Grants Monitoring Reader on the entire subscription.",
+            "label": "Entire current subscription",
+            "toolTip": "Grants Monitoring Reader on the whole subscription this template is deployed to. For another subscription, run the deployment in that subscription.",
             "multiselect": true,
             "selectAll": false,
             "filter": true,
             "constraints": {
-              "allowedValues": "[map(steps('scopes').subscriptionsApi.value, (item) => parse(concat('{\"label\":\"', item.displayName, '\",\"value\":\"', item.id, '\"}')))]"
+              "allowedValues": "[parse(concat('[{\"label\":\"Current subscription (everything inside)\",\"value\":\"/subscriptions/', subscription().subscriptionId, '\"}]'))]"
             }
           },
           {
@@ -123,7 +115,6 @@
       }
     ],
     "outputs": {
-      "location": "[location()]",
       "subject": "[basics('subject')]",
       "resourceGroupName": "[steps('identity').resourceGroupName]",
       "managedIdentityName": "[steps('identity').managedIdentityName]",
