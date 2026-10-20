@@ -62,7 +62,6 @@
             "multiselect": true,
             "selectAll": false,
             "filter": true,
-            "required": false,
             "constraints": {
               "allowedValues": "[map(steps('scopes').subscriptionsApi.value, (item) => parse(concat('{\"label\":\"', item.displayName, '\",\"value\":\"', item.id, '\"}')))]"
             }
@@ -75,7 +74,6 @@
             "multiselect": true,
             "selectAll": false,
             "filter": true,
-            "required": false,
             "constraints": {
               "allowedValues": "[map(steps('scopes').resourceGroupsApi.value, (item) => parse(concat('{\"label\":\"', item.name, '\",\"value\":\"', item.id, '\"}')))]"
             }
@@ -88,7 +86,6 @@
             "multiselect": true,
             "selectAll": false,
             "filter": true,
-            "required": false,
             "constraints": {
               "allowedValues": "[map(steps('scopes').resourcesApi.value, (item) => parse(concat('{\"label\":\"', item.name, ' (', item.type, ')\",\"value\":\"', item.id, '\"}')))]"
             }
