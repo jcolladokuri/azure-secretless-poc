@@ -130,14 +130,6 @@
             "options": {
               "text": "No Azure Data Explorer clusters were found in the scopes you selected, so there is nothing to configure here. Click Next."
             }
-          },
-          {
-            "name": "debug",
-            "type": "Microsoft.Common.TextBlock",
-            "visible": true,
-            "options": {
-              "text": "[concat('DEBUG (remove): resources=', length(steps('scopes').resourcesApi.value), ' kusto=', length(filter(steps('scopes').resourcesApi.value, (c) => equals(toLower(c.type), 'microsoft.kusto/clusters'))), ' scopes=', string(map(concat(steps('scopes').subscriptionScopes, steps('scopes').resourceGroupScopes, steps('scopes').resourceScopes), (s) => toLower(s))))]"
-            }
           }
         ]
       },
