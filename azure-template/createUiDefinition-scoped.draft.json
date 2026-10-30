@@ -92,6 +92,14 @@
         "label": "Azure Data Explorer access",
         "elements": [
           {
+            "name": "debug",
+            "type": "Microsoft.Common.TextBlock",
+            "visible": true,
+            "options": {
+              "text": "[concat('DEBUG (remove) subs=', string(steps('scopes').subscriptionScopes), ' | rgs=', string(steps('scopes').resourceGroupScopes), ' | res=', string(steps('scopes').resourceScopes), ' | totalResources=', string(length(steps('scopes').resourcesApi.value)), ' | kustoIds=', string(map(filter(steps('scopes').resourcesApi.value, (k) => equals(toLower(k.type), 'microsoft.kusto/clusters')), (k) => k.id)))]"
+            }
+          },
+          {
             "name": "info",
             "type": "Microsoft.Common.InfoBox",
             "visible": "[not(empty(filter(filter(steps('scopes').resourcesApi.value, (k) => equals(toLower(k.type), 'microsoft.kusto/clusters')), (c) => not(empty(filter(concat(steps('scopes').subscriptionScopes, steps('scopes').resourceGroupScopes, steps('scopes').resourceScopes), (s) => or(equals(toLower(c.id), toLower(s)), startsWith(toLower(c.id), concat(toLower(s), '/')))))))))]",
