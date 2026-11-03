@@ -47,6 +47,14 @@
             }
           },
           {
+            "name": "kustoApi",
+            "type": "Microsoft.Solutions.ArmApiControl",
+            "request": {
+              "method": "GET",
+              "path": "[concat('subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Kusto/clusters?api-version=2023-05-02')]"
+            }
+          },
+          {
             "name": "subscriptionScopes",
             "type": "Microsoft.Common.DropDown",
             "label": "Entire current subscription",
@@ -92,17 +100,17 @@
         "label": "Azure Data Explorer access",
         "elements": [
           {
-            "name": "kustoApi",
-            "type": "Microsoft.Solutions.ArmApiControl",
-            "request": {
-              "method": "GET",
-              "path": "[concat('subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Kusto/clusters?api-version=2023-05-02')]"
+            "name": "loading",
+            "type": "Microsoft.Common.TextBlock",
+            "visible": "[not(not(equals(coalesce(steps('scopes').kustoApi.value, 'loading'), 'loading')))]",
+            "options": {
+              "text": "Loading Azure Data Explorer clusters\u2026"
             }
           },
           {
             "name": "info",
             "type": "Microsoft.Common.InfoBox",
-            "visible": "[not(empty(filter(steps('kusto').kustoApi.value, (c) => or(contains(map(steps('scopes').subscriptionScopes, (s) => toLower(s)), toLower(concat('/subscriptions/', subscription().subscriptionId))), contains(map(steps('scopes').resourceGroupScopes, (s) => toLower(s)), toLower(substring(c.id, 0, indexOf(c.id, '/providers/')))), contains(map(steps('scopes').resourceScopes, (s) => toLower(s)), toLower(c.id))))))]",
+            "visible": "[not(empty(filter(coalesce(steps('scopes').kustoApi.value, parse('[]')), (c) => or(contains(map(steps('scopes').subscriptionScopes, (s) => toLower(s)), toLower(concat('/subscriptions/', subscription().subscriptionId))), contains(map(steps('scopes').resourceGroupScopes, (s) => toLower(s)), toLower(substring(c.id, 0, indexOf(c.id, '/providers/')))), contains(map(steps('scopes').resourceScopes, (s) => toLower(s)), toLower(c.id))))))]",
             "options": {
               "icon": "Info",
               "text": "We found Azure Data Explorer (Kusto) clusters in the scopes you selected. Monitoring Reader does not give query access to Kusto, which has its own permission model. Select the clusters Grafana should be able to query."
@@ -111,7 +119,7 @@
           {
             "name": "clusterWideWarning",
             "type": "Microsoft.Common.InfoBox",
-            "visible": "[not(empty(filter(steps('kusto').kustoApi.value, (c) => or(contains(map(steps('scopes').subscriptionScopes, (s) => toLower(s)), toLower(concat('/subscriptions/', subscription().subscriptionId))), contains(map(steps('scopes').resourceGroupScopes, (s) => toLower(s)), toLower(substring(c.id, 0, indexOf(c.id, '/providers/')))), contains(map(steps('scopes').resourceScopes, (s) => toLower(s)), toLower(c.id))))))]",
+            "visible": "[not(empty(filter(coalesce(steps('scopes').kustoApi.value, parse('[]')), (c) => or(contains(map(steps('scopes').subscriptionScopes, (s) => toLower(s)), toLower(concat('/subscriptions/', subscription().subscriptionId))), contains(map(steps('scopes').resourceGroupScopes, (s) => toLower(s)), toLower(substring(c.id, 0, indexOf(c.id, '/providers/')))), contains(map(steps('scopes').resourceScopes, (s) => toLower(s)), toLower(c.id))))))]",
             "options": {
               "icon": "Warning",
               "text": "This grants the AllDatabasesViewer role, which is cluster-wide: Grafana's identity will be able to read every database on each selected cluster, including databases created in the future. You need write access on each selected cluster."
@@ -125,16 +133,16 @@
             "multiselect": true,
             "selectAll": true,
             "filter": true,
-            "visible": "[not(empty(filter(steps('kusto').kustoApi.value, (c) => or(contains(map(steps('scopes').subscriptionScopes, (s) => toLower(s)), toLower(concat('/subscriptions/', subscription().subscriptionId))), contains(map(steps('scopes').resourceGroupScopes, (s) => toLower(s)), toLower(substring(c.id, 0, indexOf(c.id, '/providers/')))), contains(map(steps('scopes').resourceScopes, (s) => toLower(s)), toLower(c.id))))))]",
+            "visible": "[not(empty(filter(coalesce(steps('scopes').kustoApi.value, parse('[]')), (c) => or(contains(map(steps('scopes').subscriptionScopes, (s) => toLower(s)), toLower(concat('/subscriptions/', subscription().subscriptionId))), contains(map(steps('scopes').resourceGroupScopes, (s) => toLower(s)), toLower(substring(c.id, 0, indexOf(c.id, '/providers/')))), contains(map(steps('scopes').resourceScopes, (s) => toLower(s)), toLower(c.id))))))]",
             "constraints": {
-              "allowedValues": "[map(filter(steps('kusto').kustoApi.value, (c) => or(contains(map(steps('scopes').subscriptionScopes, (s) => toLower(s)), toLower(concat('/subscriptions/', subscription().subscriptionId))), contains(map(steps('scopes').resourceGroupScopes, (s) => toLower(s)), toLower(substring(c.id, 0, indexOf(c.id, '/providers/')))), contains(map(steps('scopes').resourceScopes, (s) => toLower(s)), toLower(c.id)))), (item) => parse(concat('{\"label\":\"', item.name, '\",\"value\":\"', item.id, '\"}')))]"
+              "allowedValues": "[map(filter(coalesce(steps('scopes').kustoApi.value, parse('[]')), (c) => or(contains(map(steps('scopes').subscriptionScopes, (s) => toLower(s)), toLower(concat('/subscriptions/', subscription().subscriptionId))), contains(map(steps('scopes').resourceGroupScopes, (s) => toLower(s)), toLower(substring(c.id, 0, indexOf(c.id, '/providers/')))), contains(map(steps('scopes').resourceScopes, (s) => toLower(s)), toLower(c.id)))), (item) => parse(concat('{\"label\":\"', item.name, '\",\"value\":\"', item.id, '\"}')))]"
             },
             "defaultValue": []
           },
           {
             "name": "noClusters",
             "type": "Microsoft.Common.TextBlock",
-            "visible": "[empty(filter(steps('kusto').kustoApi.value, (c) => or(contains(map(steps('scopes').subscriptionScopes, (s) => toLower(s)), toLower(concat('/subscriptions/', subscription().subscriptionId))), contains(map(steps('scopes').resourceGroupScopes, (s) => toLower(s)), toLower(substring(c.id, 0, indexOf(c.id, '/providers/')))), contains(map(steps('scopes').resourceScopes, (s) => toLower(s)), toLower(c.id)))))]",
+            "visible": "[and(not(equals(coalesce(steps('scopes').kustoApi.value, 'loading'), 'loading')), empty(filter(coalesce(steps('scopes').kustoApi.value, parse('[]')), (c) => or(contains(map(steps('scopes').subscriptionScopes, (s) => toLower(s)), toLower(concat('/subscriptions/', subscription().subscriptionId))), contains(map(steps('scopes').resourceGroupScopes, (s) => toLower(s)), toLower(substring(c.id, 0, indexOf(c.id, '/providers/')))), contains(map(steps('scopes').resourceScopes, (s) => toLower(s)), toLower(c.id))))))]",
             "options": {
               "text": "No Azure Data Explorer clusters were found in the scopes you selected, so there is nothing to configure here. Click Next."
             }
