@@ -1,0 +1,218 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "basics": [
+      {
+        "name": "subject",
+        "type": "Microsoft.Common.TextBox",
+        "label": "Subject",
+        "toolTip": "Copy the subject value provided by the Grafana App for your connection.",
+        "constraints": {
+          "required": true,
+          "regex": "^.+$",
+          "validationMessage": "Paste the subject value shown in the Grafana App."
+        }
+      }
+    ],
+    "steps": [
+      {
+        "name": "scopes",
+        "label": "Monitoring Reader access",
+        "elements": [
+          {
+            "name": "info",
+            "type": "Microsoft.Common.InfoBox",
+            "visible": true,
+            "options": {
+              "icon": "Info",
+              "text": "Choose where Grafana's identity gets the Monitoring Reader role. Pick whole subscriptions, individual resource groups, individual resources, or any mix. You need permission to create role assignments at each scope you choose."
+            }
+          },
+          {
+            "name": "resourceGroupsApi",
+            "type": "Microsoft.Solutions.ArmApiControl",
+            "request": {
+              "method": "GET",
+              "path": "[concat('subscriptions/', subscription().subscriptionId, '/resourcegroups?api-version=2022-09-01')]"
+            }
+          },
+          {
+            "name": "resourcesApi",
+            "type": "Microsoft.Solutions.ArmApiControl",
+            "request": {
+              "method": "GET",
+              "path": "[concat('subscriptions/', subscription().subscriptionId, '/resources?api-version=2022-09-01')]"
+            }
+          },
+          {
+            "name": "subscriptionScopes",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Entire current subscription",
+            "toolTip": "Grants Monitoring Reader on the whole subscription this template is deployed to. For another subscription, run the deployment in that subscription.",
+            "multiselect": true,
+            "selectAll": false,
+            "filter": true,
+            "constraints": {
+              "allowedValues": "[parse(concat('[{\"label\":\"Current subscription (everything inside)\",\"value\":\"/subscriptions/', subscription().subscriptionId, '\"}]'))]"
+            },
+            "defaultValue": []
+          },
+          {
+            "name": "resourceGroupScopes",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Resource groups (in the current subscription)",
+            "toolTip": "Grants Monitoring Reader on every resource in each selected resource group.",
+            "multiselect": true,
+            "selectAll": false,
+            "filter": true,
+            "constraints": {
+              "allowedValues": "[map(steps('scopes').resourceGroupsApi.value, (item) => parse(concat('{\"label\":\"', item.name, '\",\"value\":\"', item.id, '\"}')))]"
+            },
+            "defaultValue": []
+          },
+          {
+            "name": "resourceScopes",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Individual resources (in the current subscription)",
+            "toolTip": "Grants Monitoring Reader on only the selected resources.",
+            "multiselect": true,
+            "selectAll": false,
+            "filter": true,
+            "constraints": {
+              "allowedValues": "[map(steps('scopes').resourcesApi.value, (item) => parse(concat('{\"label\":\"', item.name, ' (', item.type, ')\",\"value\":\"', item.id, '\"}')))]"
+            },
+            "defaultValue": []
+          }
+        ]
+      },
+      {
+        "name": "kusto",
+        "label": "Azure Data Explorer access",
+        "elements": [
+          {
+            "name": "kustoApi",
+            "type": "Microsoft.Solutions.ArmApiControl",
+            "request": {
+              "method": "GET",
+              "path": "[concat('subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Kusto/clusters?api-version=2023-05-02')]"
+            }
+          },
+          {
+            "name": "info",
+            "type": "Microsoft.Common.InfoBox",
+            "visible": "[not(empty(filter(steps('kusto').kustoApi.value, (c) => or(contains(map(steps('scopes').subscriptionScopes, (s) => toLower(s)), toLower(concat('/subscriptions/', subscription().subscriptionId))), contains(map(steps('scopes').resourceGroupScopes, (s) => toLower(s)), toLower(substring(c.id, 0, indexOf(c.id, '/providers/')))), contains(map(steps('scopes').resourceScopes, (s) => toLower(s)), toLower(c.id))))))]",
+            "options": {
+              "icon": "Info",
+              "text": "We found Azure Data Explorer (Kusto) clusters in the scopes you selected. Monitoring Reader does not give query access to Kusto, which has its own permission model. Select the clusters Grafana should be able to query."
+            }
+          },
+          {
+            "name": "clusterWideWarning",
+            "type": "Microsoft.Common.InfoBox",
+            "visible": "[not(empty(filter(steps('kusto').kustoApi.value, (c) => or(contains(map(steps('scopes').subscriptionScopes, (s) => toLower(s)), toLower(concat('/subscriptions/', subscription().subscriptionId))), contains(map(steps('scopes').resourceGroupScopes, (s) => toLower(s)), toLower(substring(c.id, 0, indexOf(c.id, '/providers/')))), contains(map(steps('scopes').resourceScopes, (s) => toLower(s)), toLower(c.id))))))]",
+            "options": {
+              "icon": "Warning",
+              "text": "This grants the AllDatabasesViewer role, which is cluster-wide: Grafana's identity will be able to read every database on each selected cluster, including databases created in the future. You need write access on each selected cluster."
+            }
+          },
+          {
+            "name": "kustoClusterIds",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Clusters to grant AllDatabasesViewer on",
+            "toolTip": "Only clusters inside the scopes you selected in the previous step are listed. Leave empty to skip.",
+            "multiselect": true,
+            "selectAll": true,
+            "filter": true,
+            "visible": "[not(empty(filter(steps('kusto').kustoApi.value, (c) => or(contains(map(steps('scopes').subscriptionScopes, (s) => toLower(s)), toLower(concat('/subscriptions/', subscription().subscriptionId))), contains(map(steps('scopes').resourceGroupScopes, (s) => toLower(s)), toLower(substring(c.id, 0, indexOf(c.id, '/providers/')))), contains(map(steps('scopes').resourceScopes, (s) => toLower(s)), toLower(c.id))))))]",
+            "constraints": {
+              "allowedValues": "[map(filter(steps('kusto').kustoApi.value, (c) => or(contains(map(steps('scopes').subscriptionScopes, (s) => toLower(s)), toLower(concat('/subscriptions/', subscription().subscriptionId))), contains(map(steps('scopes').resourceGroupScopes, (s) => toLower(s)), toLower(substring(c.id, 0, indexOf(c.id, '/providers/')))), contains(map(steps('scopes').resourceScopes, (s) => toLower(s)), toLower(c.id)))), (item) => parse(concat('{\"label\":\"', item.name, '\",\"value\":\"', item.id, '\"}')))]"
+            },
+            "defaultValue": []
+          },
+          {
+            "name": "noClusters",
+            "type": "Microsoft.Common.TextBlock",
+            "visible": "[empty(filter(steps('kusto').kustoApi.value, (c) => or(contains(map(steps('scopes').subscriptionScopes, (s) => toLower(s)), toLower(concat('/subscriptions/', subscription().subscriptionId))), contains(map(steps('scopes').resourceGroupScopes, (s) => toLower(s)), toLower(substring(c.id, 0, indexOf(c.id, '/providers/')))), contains(map(steps('scopes').resourceScopes, (s) => toLower(s)), toLower(c.id)))))]",
+            "options": {
+              "text": "No Azure Data Explorer clusters were found in the scopes you selected, so there is nothing to configure here. Click Next."
+            }
+          }
+        ]
+      },
+      {
+        "name": "identity",
+        "label": "Identity",
+        "elements": [
+          {
+            "name": "resourceGroupMode",
+            "type": "Microsoft.Common.OptionsGroup",
+            "label": "Resource group",
+            "defaultValue": "Create new",
+            "toolTip": "Where the managed identity lives. Choose an existing group or create a new one.",
+            "constraints": {
+              "allowedValues": [
+                {
+                  "label": "Create new",
+                  "value": "new"
+                },
+                {
+                  "label": "Use existing",
+                  "value": "existing"
+                }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "newResourceGroupName",
+            "type": "Microsoft.Common.TextBox",
+            "label": "New resource group name",
+            "defaultValue": "rg-grafana-azure",
+            "toolTip": "A new resource group is created in the deployment region. If a group with this name already exists, choose Use existing instead.",
+            "constraints": {
+              "required": true,
+              "regex": "^[-\\w\\._\\(\\)]{1,90}$",
+              "validationMessage": "Enter a valid resource group name."
+            },
+            "visible": "[equals(steps('identity').resourceGroupMode, 'new')]"
+          },
+          {
+            "name": "existingResourceGroupName",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Existing resource group",
+            "toolTip": "Resource group to place the managed identity in.",
+            "visible": "[equals(steps('identity').resourceGroupMode, 'existing')]",
+            "constraints": {
+              "required": true,
+              "allowedValues": "[map(steps('scopes').resourceGroupsApi.value, (item) => parse(concat('{\"label\":\"', item.name, '\",\"value\":\"', item.name, '\"}')))]"
+            }
+          },
+          {
+            "name": "managedIdentityName",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Managed identity name override (optional)",
+            "defaultValue": "",
+            "constraints": {
+              "required": false,
+              "regex": "^$|^[a-zA-Z0-9][a-zA-Z0-9-_]{2,127}$",
+              "validationMessage": "Enter a valid managed identity name."
+            },
+            "toolTip": "Advanced. Leave empty: a unique name (mi-grafana-<hash>) is generated for this connection and shown in the deployment outputs. Set a name only to pin or reuse a specific identity; connections that share an identity overwrite each other's subject."
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "subject": "[basics('subject')]",
+      "resourceGroupName": "[if(equals(steps('identity').resourceGroupMode, 'new'), steps('identity').newResourceGroupName, steps('identity').existingResourceGroupName)]",
+      "managedIdentityName": "[steps('identity').managedIdentityName]",
+      "subscriptionScopes": "[steps('scopes').subscriptionScopes]",
+      "resourceGroupScopes": "[steps('scopes').resourceGroupScopes]",
+      "resourceScopes": "[steps('scopes').resourceScopes]",
+      "kustoClusterIds": "[steps('kusto').kustoClusterIds]",
+      "createResourceGroup": "[equals(steps('identity').resourceGroupMode, 'new')]"
+    }
+  }
+}
