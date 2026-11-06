@@ -2,7 +2,7 @@
   "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "metadata": {
-    "description": "DRAFT. Subscription-level variant of azuredeploy.json. Creates a resource group, a managed identity with a federated credential trusting Grafana's OIDC issuer, and Monitoring Reader role assignments at every scope listed in monitoringReaderScopes (subscriptions, resource groups, or individual resources, in any subscription the deployer can write role assignments in). Optionally grants AllDatabasesViewer on listed Azure Data Explorer clusters. No client secret is created."
+    "description": "DRAFT. Subscription-level variant of azuredeploy.json. Creates a resource group, a managed identity with a federated credential trusting Grafana's OIDC issuer, and Monitoring Reader and Monitoring Data Reader (for Azure Monitor managed Prometheus workspaces) role assignments at every scope listed in monitoringReaderScopes (subscriptions, resource groups, or individual resources, in any subscription the deployer can write role assignments in). Optionally grants AllDatabasesViewer on listed Azure Data Explorer clusters. No client secret is created."
   },
   "parameters": {
     "resourceGroupName": {
@@ -86,6 +86,11 @@
   "variables": {
     "federatedCredentialName": "grafana-federated",
     "monitoringReaderRoleId": "43d0d8ad-25c7-4714-9337-8ba259a9fe05",
+    "monitoringDataReaderRoleId": "b0d8363b-8ddd-447d-831f-62ca05bff136",
+    "roleIds": [
+      "[variables('monitoringReaderRoleId')]",
+      "[variables('monitoringDataReaderRoleId')]"
+    ],
     "identityDeploymentName": "grafana-identity",
     "identityDeploymentId": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Resources/deployments/{2}', subscription().subscriptionId, parameters('resourceGroupName'), variables('identityDeploymentName'))]",
     "allScopes": "[union(parameters('monitoringReaderScopes'), parameters('subscriptionScopes'), parameters('resourceGroupScopes'), parameters('resourceScopes'))]",
@@ -211,17 +216,21 @@
             "principalId": {
               "type": "string"
             },
-            "roleId": {
-              "type": "string"
+            "roleIds": {
+              "type": "array"
             }
           },
           "resources": [
             {
+              "copy": {
+                "name": "roleCopy",
+                "count": "[length(parameters('roleIds'))]"
+              },
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
-              "name": "[guid(subscription().id, parameters('principalId'), parameters('roleId'))]",
+              "name": "[guid(subscription().id, parameters('principalId'), parameters('roleIds')[copyIndex()])]",
               "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleId'))]",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleIds')[copyIndex()])]",
                 "principalId": "[parameters('principalId')]",
                 "principalType": "ServicePrincipal"
               }
@@ -232,8 +241,8 @@
           "principalId": {
             "value": "[reference(variables('identityDeploymentId'), '2022-09-01').outputs.principalId.value]"
           },
-          "roleId": {
-            "value": "[variables('monitoringReaderRoleId')]"
+          "roleIds": {
+            "value": "[variables('roleIds')]"
           }
         }
       }
@@ -264,17 +273,21 @@
             "principalId": {
               "type": "string"
             },
-            "roleId": {
-              "type": "string"
+            "roleIds": {
+              "type": "array"
             }
           },
           "resources": [
             {
+              "copy": {
+                "name": "roleCopy",
+                "count": "[length(parameters('roleIds'))]"
+              },
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
-              "name": "[guid(resourceGroup().id, parameters('principalId'), parameters('roleId'))]",
+              "name": "[guid(resourceGroup().id, parameters('principalId'), parameters('roleIds')[copyIndex()])]",
               "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleId'))]",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleIds')[copyIndex()])]",
                 "principalId": "[parameters('principalId')]",
                 "principalType": "ServicePrincipal"
               }
@@ -285,8 +298,8 @@
           "principalId": {
             "value": "[reference(variables('identityDeploymentId'), '2022-09-01').outputs.principalId.value]"
           },
-          "roleId": {
-            "value": "[variables('monitoringReaderRoleId')]"
+          "roleIds": {
+            "value": "[variables('roleIds')]"
           }
         }
       }
@@ -317,8 +330,8 @@
             "principalId": {
               "type": "string"
             },
-            "roleId": {
-              "type": "string"
+            "roleIds": {
+              "type": "array"
             },
             "targetScope": {
               "type": "string"
@@ -326,12 +339,16 @@
           },
           "resources": [
             {
+              "copy": {
+                "name": "roleCopy",
+                "count": "[length(parameters('roleIds'))]"
+              },
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
               "scope": "[parameters('targetScope')]",
-              "name": "[guid(parameters('targetScope'), parameters('principalId'), parameters('roleId'))]",
+              "name": "[guid(parameters('targetScope'), parameters('principalId'), parameters('roleIds')[copyIndex()])]",
               "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleId'))]",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleIds')[copyIndex()])]",
                 "principalId": "[parameters('principalId')]",
                 "principalType": "ServicePrincipal"
               }
@@ -342,8 +359,8 @@
           "principalId": {
             "value": "[reference(variables('identityDeploymentId'), '2022-09-01').outputs.principalId.value]"
           },
-          "roleId": {
-            "value": "[variables('monitoringReaderRoleId')]"
+          "roleIds": {
+            "value": "[variables('roleIds')]"
           },
           "targetScope": {
             "value": "[variables('allScopes')[copyIndex()]]"

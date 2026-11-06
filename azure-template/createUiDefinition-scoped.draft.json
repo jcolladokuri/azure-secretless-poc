@@ -19,7 +19,7 @@
     "steps": [
       {
         "name": "scopes",
-        "label": "Monitoring Reader access",
+        "label": "Monitoring access",
         "elements": [
           {
             "name": "info",
@@ -27,7 +27,7 @@
             "visible": true,
             "options": {
               "icon": "Info",
-              "text": "Choose where Grafana's identity gets the Monitoring Reader role. Pick whole subscriptions, individual resource groups, individual resources, or any mix. You need permission to create role assignments at each scope you choose."
+              "text": "Choose where Grafana's identity gets the Monitoring Reader and Monitoring Data Reader roles (the latter is needed for Azure Monitor managed Prometheus). Pick whole subscriptions, individual resource groups, individual resources, or any mix. You need permission to create role assignments at each scope you choose."
             }
           },
           {
@@ -50,7 +50,7 @@
             "name": "subscriptionScopes",
             "type": "Microsoft.Common.DropDown",
             "label": "Entire current subscription",
-            "toolTip": "Grants Monitoring Reader on the whole subscription this template is deployed to. For another subscription, run the deployment in that subscription.",
+            "toolTip": "Grants Monitoring Reader and Monitoring Data Reader on the whole subscription this template is deployed to. For another subscription, run the deployment in that subscription.",
             "multiselect": true,
             "selectAll": false,
             "filter": true,
@@ -63,7 +63,7 @@
             "name": "resourceGroupScopes",
             "type": "Microsoft.Common.DropDown",
             "label": "Resource groups (in the current subscription)",
-            "toolTip": "Grants Monitoring Reader on every resource in each selected resource group.",
+            "toolTip": "Grants Monitoring Reader and Monitoring Data Reader on every resource in each selected resource group.",
             "multiselect": true,
             "selectAll": false,
             "filter": true,
@@ -76,7 +76,7 @@
             "name": "resourceScopes",
             "type": "Microsoft.Common.DropDown",
             "label": "Individual resources (in the current subscription)",
-            "toolTip": "Grants Monitoring Reader on only the selected resources.",
+            "toolTip": "Grants Monitoring Reader and Monitoring Data Reader on only the selected resources.",
             "multiselect": true,
             "selectAll": false,
             "filter": true,
